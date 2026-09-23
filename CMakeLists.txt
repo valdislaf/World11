@@ -1,6 +1,52 @@
 cmake_minimum_required(VERSION 3.22)
 project(World11 LANGUAGES CXX)
 
+# MinGW: the C runtime selected by the toolchain headers (msvcrt or UCRT) must
+# match the one libstdc++-6.dll was built against. A mixed toolchain links the
+# program to one CRT and libstdc++ to the other, which crashes at run time
+# inside iostreams/locale (e.g. the first std::ifstream in Gl33Texture).
+if (MINGW)
+  include(CheckCXXSourceCompiles)
+  check_cxx_source_compiles("
+    #include <cstdio>
+    #ifndef _UCRT
+    #error msvcrt
+    #endif
+    int main() { return 0; }" HG_MINGW_HEADERS_USE_UCRT)
+  get_filename_component(HG_MINGW_BIN "${CMAKE_CXX_COMPILER}" DIRECTORY)
+  set(HG_MINGW_LIBSTDCXX "${HG_MINGW_BIN}/libstdc++-6.dll")
+  if (EXISTS "${HG_MINGW_LIBSTDCXX}")
+    file(STRINGS "${HG_MINGW_LIBSTDCXX}" HG_LIBSTDCXX_CRT
+         REGEX "^(msvcrt\\.dll|api-ms-win-crt-.*\\.dll|ucrtbase\\.dll)$")
+    set(HG_LIBSTDCXX_USES_UCRT OFF)
+    set(HG_LIBSTDCXX_USES_MSVCRT OFF)
+    foreach (HG_CRT_NAME IN LISTS HG_LIBSTDCXX_CRT)
+      if (HG_CRT_NAME STREQUAL "msvcrt.dll")
+        set(HG_LIBSTDCXX_USES_MSVCRT ON)
+      else()
+        set(HG_LIBSTDCXX_USES_UCRT ON)
+      endif()
+    endforeach()
+    if ((HG_MINGW_HEADERS_USE_UCRT AND HG_LIBSTDCXX_USES_MSVCRT) OR
+        (NOT HG_MINGW_HEADERS_USE_UCRT AND HG_LIBSTDCXX_USES_UCRT))
+      if (HG_MINGW_HEADERS_USE_UCRT)
+        set(HG_HEADERS_CRT "UCRT")
+        set(HG_LIBSTDCXX_CRT_NAME "msvcrt")
+      else()
+        set(HG_HEADERS_CRT "msvcrt")
+        set(HG_LIBSTDCXX_CRT_NAME "UCRT")
+      endif()
+      message(FATAL_ERROR
+        "MinGW toolchain mixes C runtimes: headers select ${HG_HEADERS_CRT}, "
+        "but ${HG_MINGW_LIBSTDCXX} uses ${HG_LIBSTDCXX_CRT_NAME}. "
+        "The program would crash in iostreams at run time. For MSYS2 mingw64 "
+        "reinstall the CRT packages (pacman -S mingw-w64-x86_64-headers-git "
+        "mingw-w64-x86_64-crt-git mingw-w64-x86_64-winpthreads) and check "
+        "them with pacman -Qkk; or use the ucrt64 environment consistently.")
+    endif()
+  endif()
+endif()
+
 find_package(glfw3 CONFIG REQUIRED)
 set(GLFW_TARGET "")
 if (TARGET glfw)
