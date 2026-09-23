@@ -1,0 +1,14 @@
+# Runtime resources
+
+| File | PNG payload |
+| --- | --- |
+| 0x00000017.fget | day_ocean.png — ocean skybox |
+| 0x00000018.fget | world11_coral_tissue.png |
+| 0x00000019.fget | world11_fish_01.png |
+| 0x0000001A.fget | world11_fish_01_body_mask.png |
+| 0x0000001B.fget | sand_bottom_ocean.png |
+
+Format: four ASCII bytes `FGET`, one XOR key byte, then PNG bytes XORed with that key.
+This is the original runtime encoding, not a security mechanism.
+Run `python scripts/assets.py unpack` from the repository root to restore editable PNGs;
+after editing, run `python scripts/assets.py pack` and commit the changed FGET files.
