@@ -3,6 +3,7 @@
 #include "render/gl33/Gl33Api.hpp"
 #include "render/gl33/Gl33Mesh.hpp"
 #include "render/gl33/Gl33ShaderProgram.hpp"
+#include "render/gl33/Gl33ShadowMap.hpp"
 #include "render/gl33/Gl33Skybox.hpp"
 #include "render/gl33/Gl33Texture.hpp"
 #include "render/gl33/Gl33World11DecorRenderer.hpp"
@@ -16,6 +17,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace hg::render::gl33 {
@@ -496,7 +498,10 @@ void main() {
       ? clamp((ndl + 0.35) / 1.35, 0.0, 1.0)
       : max(ndl, 0.0);
   float ambient = uUseUnderwaterAbsorption != 0 ? 0.32 : 0.24;
-  float light = mix(ambient + diffuse * (1.0 - ambient), 1.0, uEmissive);
+  float shadow = world11ShadowVisibility(
+      vWorldPosition, normalize(vNormal), uLightDirection);
+  float light = mix(ambient + diffuse * (1.0 - ambient) * shadow, 1.0,
+                    uEmissive);
   vec4 texel = uUseTexture != 0 ? texture(uTexture, vUv * uUvScale) : vec4(1.0);
   vec3 color = uBaseColor.rgb * texel.rgb * light;
   float distanceToCamera = length(vWorldPosition - uCameraPosition);
@@ -756,6 +761,11 @@ void main() {
 }
 )glsl";
 
+constexpr char kShadowDepthFragmentShaderSource[] = R"glsl(#version 330 core
+void main() {
+}
+)glsl";
+
 struct WorldResources {
   Gl33Mesh cube;
   Gl33Mesh pyramid;
@@ -768,6 +778,7 @@ struct WorldResources {
   Gl33Mesh terrain;
   bool hasTerrain = false;
   Gl33ShaderProgram program;
+  Gl33ShaderProgram shadowProgram;
   Gl33ShaderProgram portalProgram;
   Gl33Texture wallTexture;
   Gl33Texture panelTexture;
@@ -778,8 +789,9 @@ class Painter {
 public:
   Painter(WorldResources& resources, const Gl33WorldFrame& frame,
           Color fogColor, float fogStart, float fogEnd,
-          bool useUnderwaterAbsorption = false)
-      : resources_(resources) {
+          bool useUnderwaterAbsorption = false,
+          const Gl33ShadowMap* shadowMap = nullptr)
+      : resources_(resources), program_(&resources.program) {
     const Vec3 eye{frame.camera.position[0], frame.camera.position[1], frame.camera.position[2]};
     const Vec3 front{frame.camera.front[0], frame.camera.front[1], frame.camera.front[2]};
     const Vec3 up{frame.camera.up[0], frame.camera.up[1], frame.camera.up[2]};
@@ -801,27 +813,42 @@ public:
     resources_.program.setFloat("uAbsorptionDensity", 0.008f);
     resources_.program.setFloat("uDepthAbsorption", 0.0017f);
     if (useUnderwaterAbsorption) setWorld11Environment(resources_.program);
+    if (shadowMap != nullptr) {
+      shadowMap->applyToReceiver(resources_.program);
+    } else {
+      resources_.program.setInt("uShadowEnabled", 0);
+    }
+  }
+
+  /// Draws the same geometry into the active shadow depth pass.
+  Painter(WorldResources& resources, const Gl33ShadowMap& shadowMap)
+      : resources_(resources), program_(&resources.shadowProgram),
+        castsShadows_(true) {
+    resources_.shadowProgram.use();
+    resources_.shadowProgram.setMatrix4("uView", shadowMap.lightView());
+    resources_.shadowProgram.setMatrix4("uProjection",
+                                        shadowMap.lightProjection());
   }
 
   void mesh(Gl33Mesh& meshValue, const Matrix4& model, Color color,
             float emissive = 0.0f) {
-    resources_.program.setMatrix4("uModel", model.data());
-    resources_.program.setVec4("uBaseColor", color.red, color.green, color.blue, color.alpha);
-    resources_.program.setFloat("uEmissive", emissive);
-    resources_.program.setInt("uUseTexture", 0);
-    resources_.program.setFloat("uUvScale", 1.0f);
+    program_->setMatrix4("uModel", model.data());
+    program_->setVec4("uBaseColor", color.red, color.green, color.blue, color.alpha);
+    program_->setFloat("uEmissive", emissive);
+    program_->setInt("uUseTexture", 0);
+    program_->setFloat("uUvScale", 1.0f);
     meshValue.draw();
   }
 
   void texturedMesh(Gl33Mesh& meshValue, const Matrix4& model,
                     Gl33Texture& texture, Color color, float uvScale = 1.0f,
                     float emissive = 0.0f) {
-    resources_.program.setMatrix4("uModel", model.data());
-    resources_.program.setVec4("uBaseColor", color.red, color.green, color.blue, color.alpha);
-    resources_.program.setFloat("uEmissive", emissive);
-    resources_.program.setInt("uUseTexture", 1);
-    resources_.program.setInt("uTexture", 0);
-    resources_.program.setFloat("uUvScale", uvScale);
+    program_->setMatrix4("uModel", model.data());
+    program_->setVec4("uBaseColor", color.red, color.green, color.blue, color.alpha);
+    program_->setFloat("uEmissive", emissive);
+    program_->setInt("uUseTexture", 1);
+    program_->setInt("uTexture", 0);
+    program_->setFloat("uUvScale", uvScale);
     texture.bind(0);
     meshValue.draw();
   }
@@ -885,6 +912,10 @@ public:
 
   void portal(float x, float y, float z, float radius, Color color,
               float time, float seed) {
+    if (castsShadows_) {
+      // The gate is a translucent energy surface, not an occluder.
+      return;
+    }
     Gl33Api& gl = api();
     gl.Enable(kBlend);
     gl.BlendFunc(kSourceAlpha, kOneMinusSourceAlpha);
@@ -931,6 +962,8 @@ public:
 
 private:
   WorldResources& resources_;
+  Gl33ShaderProgram* program_;
+  bool castsShadows_ = false;
   Matrix4 view_{};
   Matrix4 projection_{};
 };
@@ -1309,6 +1342,7 @@ Gl33WorldRenderer::Gl33WorldRenderer(int worldId) : worldId_(worldId) {
     oceanRenderer_ = std::make_unique<Gl33Renderer>();
     world11DecorRenderer_ = std::make_unique<Gl33World11DecorRenderer>();
     world11FishRenderer_ = std::make_unique<Gl33World11FishRenderer>();
+    world11ShadowMap_ = std::make_unique<Gl33ShadowMap>();
   }
   switch (worldId_) {
     case 8:
@@ -1353,6 +1387,20 @@ void Gl33WorldRenderer::render(const Gl33WorldFrame& frame) {
   gl.DepthMask(kTrue);
 
   const bool depthBasedWater = worldId_ == 11 && oceanRenderer_ != nullptr;
+  const Gl33ShadowMap* shadowMap = nullptr;
+  if (depthBasedWater && world11ShadowMap_ != nullptr) {
+    // Seabed is only a receiver: its gentle relief would add acne, not
+    // meaningful occlusion, for this steep sun.
+    world11ShadowMap_->beginDepthPass(frame.camera);
+    Painter shadowCaster(*resources_, *world11ShadowMap_);
+    drawWorld11Landmarks(shadowCaster, frame);
+    world11DecorRenderer_->renderShadowDepth(frame.camera, frame.time,
+                                             *world11ShadowMap_);
+    world11FishRenderer_->renderShadowDepth(frame.time, *world11ShadowMap_);
+    world11ShadowMap_->endDepthPass();
+    shadowMap = world11ShadowMap_.get();
+  }
+
   if (depthBasedWater) {
     oceanRenderer_->beginOpaquePass(frame.camera);
   }
@@ -1363,16 +1411,17 @@ void Gl33WorldRenderer::render(const Gl33WorldFrame& frame) {
   }
 
   if (depthBasedWater) {
-    oceanRenderer_->renderSeabed(frame.camera);
-    world11DecorRenderer_->render(frame.camera, frame.time);
-    world11FishRenderer_->render(frame.camera, frame.time);
+    oceanRenderer_->renderSeabed(frame.camera, shadowMap);
+    world11DecorRenderer_->render(frame.camera, frame.time, shadowMap);
+    world11FishRenderer_->render(frame.camera, frame.time, shadowMap);
   }
 
   const Color fog = worldId_ == 11 ? Color{0.10f, 0.32f, 0.40f}
       : (worldId_ == 12 ? Color{0.105f, 0.075f, 0.065f}
                         : Color{clearColor.red, clearColor.green, clearColor.blue});
   const float fogEnd = worldId_ == 9 ? 72.0f : (worldId_ == 10 ? 68.0f : 165.0f);
-  Painter painter(*resources_, frame, fog, 22.0f, fogEnd, worldId_ == 11);
+  Painter painter(*resources_, frame, fog, 22.0f, fogEnd, worldId_ == 11,
+                  shadowMap);
   switch (worldId_) {
     case 6: drawWorld6(painter, frame); break;
     case 7: drawWorld7(painter, frame); break;
@@ -1398,6 +1447,9 @@ void Gl33WorldRenderer::render(const Gl33WorldFrame& frame) {
         frame.camera, frame.time, Gl33BubblePass::InFrontOfWater,
         waterSurfaceDepth);
   }
+  if (world11ShadowMap_ != nullptr) {
+    world11ShadowMap_->unbind();
+  }
   gl.DepthMask(kTrue);
   gl.UseProgram(0);
 }
@@ -1407,7 +1459,13 @@ void Gl33WorldRenderer::ensureInitialized() {
     return;
   }
   resources_ = std::make_unique<Resources>();
-  resources_->program.build(kWorldVertexShaderSource, kWorldFragmentShaderSource);
+  const std::string worldFragmentShader =
+      withWorld11Shadows(kWorldFragmentShaderSource);
+  resources_->program.build(kWorldVertexShaderSource,
+                            worldFragmentShader.c_str());
+  initializeWorld11ShadowReceiver(resources_->program);
+  resources_->shadowProgram.build(kWorldVertexShaderSource,
+                                  kShadowDepthFragmentShaderSource);
   resources_->portalProgram.build(kWorldVertexShaderSource,
                                   kPortalFragmentShaderSource);
   upload(resources_->cube, makeCube());

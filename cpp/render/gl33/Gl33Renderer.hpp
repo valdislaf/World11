@@ -5,6 +5,8 @@
 
 namespace hg::render::gl33 {
 
+class Gl33ShadowMap;
+
 /// <summary>Camera data consumed by the isolated Core renderer.</summary>
 struct Gl33Camera {
   float position[3];
@@ -24,8 +26,12 @@ public:
 
   /// <summary>Binds and clears the resize-aware color/depth target for World 11.</summary>
   void beginOpaquePass(const Gl33Camera& camera);
-  /// <summary>Draws the procedural seabed into the active opaque target.</summary>
-  void renderSeabed(const Gl33Camera& camera);
+  /// <summary>
+  /// Draws the procedural seabed into the active opaque target, darkened by
+  /// <paramref name="shadowMap"/> when one is supplied.
+  /// </summary>
+  void renderSeabed(const Gl33Camera& camera,
+                    const Gl33ShadowMap* shadowMap = nullptr);
   /// <summary>Renders the displaced water surface into its own depth texture.</summary>
   void renderWaterSurfaceDepth(const Gl33Camera& camera, float time);
   /// <returns>The current framebuffer-sized water-surface depth texture.</returns>

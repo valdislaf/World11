@@ -43,6 +43,7 @@ set(HG_CPP_HEADERS
   cpp/render/gl33/Gl33HudRenderer.hpp
   cpp/render/gl33/Gl33Mesh.hpp
   cpp/render/gl33/Gl33Renderer.hpp
+  cpp/render/gl33/Gl33ShadowMap.hpp
   cpp/render/gl33/Gl33Skybox.hpp
   cpp/render/gl33/Gl33Texture.hpp
   cpp/render/gl33/Gl33WorldRenderer.hpp
@@ -105,6 +106,7 @@ set(HG_CPP_SOURCES
   cpp/render/gl33/Gl33HudRenderer.cpp
   cpp/render/gl33/Gl33Mesh.cpp
   cpp/render/gl33/Gl33Renderer.cpp
+  cpp/render/gl33/Gl33ShadowMap.cpp
   cpp/render/gl33/Gl33Skybox.cpp
   cpp/render/gl33/Gl33Texture.cpp
   cpp/render/gl33/Gl33WorldRenderer.cpp

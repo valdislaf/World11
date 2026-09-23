@@ -4,12 +4,14 @@
 #include "render/gl33/Gl33Api.hpp"
 #include "render/gl33/Gl33Mesh.hpp"
 #include "render/gl33/Gl33ShaderProgram.hpp"
+#include "render/gl33/Gl33ShadowMap.hpp"
 #include "render/gl33/Gl33Texture.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace hg::render::gl33 {
@@ -455,7 +457,9 @@ void main() {
 
   vec3 normal = normalize(vWorldNormal);
   vec3 lightDirection = normalize(vec3(0.32, 0.88, 0.36));
-  float diffuse = 0.54 + 0.46 * max(dot(normal, lightDirection), 0.0);
+  float shadow = world11ShadowVisibility(
+      vWorldPosition, normal, -lightDirection);
+  float diffuse = 0.54 + 0.46 * max(dot(normal, lightDirection), 0.0) * shadow;
   float rim = pow(
       1.0 - abs(dot(normal, normalize(uCameraPosition - vWorldPosition))),
       2.0);
@@ -472,11 +476,27 @@ void main() {
 }
 )glsl";
 
+// Both faces cast; fins and tail keep their texture cutout in the shadow.
+constexpr char kFishShadowFragmentShader[] = R"glsl(#version 330 core
+in vec2 vUv;
+flat in int vSurfaceType;
+
+uniform sampler2D uFishTexture;
+uniform float uAlphaCutoff;
+
+void main() {
+  if (vSurfaceType == 1 && texture(uFishTexture, vUv).a < uAlphaCutoff) {
+    discard;
+  }
+}
+)glsl";
+
 }  // namespace
 
 struct Gl33World11FishRenderer::Resources {
   Gl33Mesh fishMesh;
   Gl33ShaderProgram fishProgram;
+  Gl33ShaderProgram fishShadowProgram;
   Gl33Texture fishTexture;
   float fishHalfWidth = 0.0f;
 };
@@ -498,7 +518,8 @@ Gl33World11FishRenderer::Gl33World11FishRenderer(
 Gl33World11FishRenderer::~Gl33World11FishRenderer() = default;
 
 void Gl33World11FishRenderer::render(
-    const Gl33Camera& camera, float simulationTime) {
+    const Gl33Camera& camera, float simulationTime,
+    const Gl33ShadowMap* shadowMap) {
   ensureInitialized();
   const Vec3 cameraPosition{
       camera.position[0], camera.position[1], camera.position[2]};
@@ -523,9 +544,38 @@ void Gl33World11FishRenderer::render(
   resources_->fishProgram.setVec3(
       "uCameraPosition", cameraPosition.x, cameraPosition.y, cameraPosition.z);
   setWorld11Environment(resources_->fishProgram);
+  if (shadowMap != nullptr) {
+    shadowMap->applyToReceiver(resources_->fishProgram);
+  } else {
+    resources_->fishProgram.setInt("uShadowEnabled", 0);
+  }
   resources_->fishProgram.setFloat("uAlphaCutoff", 0.30f);
   resources_->fishProgram.setInt("uFishTexture", 0);
   resources_->fishTexture.bind(0);
+  drawPopulation(resources_->fishProgram, simulationTime);
+  gl.BindTexture(kTexture2D, 0);
+  gl.UseProgram(0);
+}
+
+void Gl33World11FishRenderer::renderShadowDepth(
+    float simulationTime, const Gl33ShadowMap& shadowMap) {
+  ensureInitialized();
+  const Gl33ShaderProgram& program = resources_->fishShadowProgram;
+  program.use();
+  program.setMatrix4("uView", shadowMap.lightView());
+  program.setMatrix4("uProjection", shadowMap.lightProjection());
+  program.setFloat("uFishHalfWidth", resources_->fishHalfWidth);
+  program.setFloat("uAlphaCutoff", 0.30f);
+  program.setInt("uFishTexture", 0);
+  resources_->fishTexture.bind(0);
+  drawPopulation(program, simulationTime);
+  Gl33Api& gl = api();
+  gl.BindTexture(kTexture2D, 0);
+  gl.UseProgram(0);
+}
+
+void Gl33World11FishRenderer::drawPopulation(
+    const Gl33ShaderProgram& program, float simulationTime) {
   for (std::size_t index = 0; index < trajectories_.size(); ++index) {
     const world::World11FishState fish = trajectories_[index].sample(
         std::max(0.0f, simulationTime));
@@ -536,24 +586,21 @@ void Gl33World11FishRenderer::render(
         {0.0f, 1.0f, 0.0f}, multiply(forward, forward.y)), {0.0f, 1.0f, 0.0f});
     const Vec3 side = normalize(cross(forward, approximateUp), {0.0f, 0.0f, 1.0f});
     const Vec3 up = normalize(cross(side, forward), {0.0f, 1.0f, 0.0f});
-    resources_->fishProgram.setFloat("uFishScale", index == 0 ? 1.0f :
+    program.setFloat("uFishScale", index == 0 ? 1.0f :
         0.52f + 0.065f * static_cast<float>(index));
-    resources_->fishProgram.setVec3("uFishTint", index % 2 == 0 ? 1.08f : 0.78f,
+    program.setVec3("uFishTint", index % 2 == 0 ? 1.08f : 0.78f,
         0.94f, index % 2 == 0 ? 0.76f : 1.08f);
-    resources_->fishProgram.setVec3(
+    program.setVec3(
         "uFishPosition", fish.position.x, fish.position.y, fish.position.z);
-    resources_->fishProgram.setVec3(
-        "uForward", forward.x, forward.y, forward.z);
-    resources_->fishProgram.setVec3("uUp", up.x, up.y, up.z);
-    resources_->fishProgram.setVec3("uSide", side.x, side.y, side.z);
-    resources_->fishProgram.setFloat("uTailPhase", fish.tailPhase);
-    resources_->fishProgram.setFloat(
+    program.setVec3("uForward", forward.x, forward.y, forward.z);
+    program.setVec3("uUp", up.x, up.y, up.z);
+    program.setVec3("uSide", side.x, side.y, side.z);
+    program.setFloat("uTailPhase", fish.tailPhase);
+    program.setFloat(
         "uTailAmplitude", 0.84f + 0.16f * std::clamp(
             speed / world::World11FishTrajectory::kMaximumSpeed, 0.0f, 1.0f));
     resources_->fishMesh.draw();
   }
-  gl.BindTexture(kTexture2D, 0);
-  gl.UseProgram(0);
 }
 
 void Gl33World11FishRenderer::ensureInitialized() {
@@ -561,7 +608,12 @@ void Gl33World11FishRenderer::ensureInitialized() {
     return;
   }
   resources_ = std::make_unique<Resources>();
-  resources_->fishProgram.build(kFishVertexShader, kFishFragmentShader);
+  const std::string fishFragmentShader =
+      withWorld11Shadows(kFishFragmentShader);
+  resources_->fishProgram.build(kFishVertexShader, fishFragmentShader.c_str());
+  initializeWorld11ShadowReceiver(resources_->fishProgram);
+  resources_->fishShadowProgram.build(kFishVertexShader,
+                                      kFishShadowFragmentShader);
   resources_->fishTexture.loadFget(
       "datasets/0x00000019.fget", Gl33TextureWrap::ClampToEdge);
   constexpr float kFishHalfHeight = 0.65f;

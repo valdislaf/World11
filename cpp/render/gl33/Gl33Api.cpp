@@ -81,6 +81,9 @@ bool Gl33Api::load() {
   HG_LOAD_GL33(FramebufferTexture2D);
   HG_LOAD_GL33(CheckFramebufferStatus);
   HG_LOAD_GL33(BlitFramebuffer);
+  HG_LOAD_GL33(DrawBuffer);
+  HG_LOAD_GL33(ReadBuffer);
+  HG_LOAD_GL33(PolygonOffset);
 #undef HG_LOAD_GL33
   return loaded;
 }

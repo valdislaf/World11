@@ -25,7 +25,12 @@ public:
   Gl33World11DecorRenderer& operator=(const Gl33World11DecorRenderer&) = delete;
 
   void setSeeds(world::World11DecorSeeds seeds);
-  void render(const Gl33Camera& camera, float time);
+  /// <summary>Draws coral and seaweed, receiving shadows when a map is supplied.</summary>
+  void render(const Gl33Camera& camera, float time,
+              const Gl33ShadowMap* shadowMap = nullptr);
+  /// <summary>Draws coral and seaweed into the active shadow depth pass.</summary>
+  void renderShadowDepth(const Gl33Camera& camera, float time,
+                         const Gl33ShadowMap& shadowMap);
   void renderBubbles(const Gl33Camera& camera, float time,
                      Gl33BubblePass pass,
                      std::uint32_t waterSurfaceDepthTexture);

@@ -64,6 +64,12 @@ constexpr Enum kFramebufferComplete = 0x8CD5;
 constexpr Enum kReadFramebuffer = 0x8CA8;
 constexpr Enum kDrawFramebuffer = 0x8CA9;
 constexpr Enum kUnpackAlignment = 0x0CF5;
+constexpr Enum kNone = 0;
+constexpr Enum kViewport = 0x0BA2;
+constexpr Enum kPolygonOffsetFill = 0x8037;
+constexpr Enum kTextureCompareMode = 0x884C;
+constexpr Enum kTextureCompareFunc = 0x884D;
+constexpr Enum kCompareRefToTexture = 0x884E;
 constexpr Enum kVertexShader = 0x8B31;
 constexpr Enum kFragmentShader = 0x8B30;
 constexpr Enum kCompileStatus = 0x8B81;
@@ -138,6 +144,9 @@ public:
   using CheckFramebufferStatusProc = Enum (HG_GL33_APIENTRY*)(Enum);
   using BlitFramebufferProc = void (HG_GL33_APIENTRY*)(
       Int, Int, Int, Int, Int, Int, Int, Int, Bitfield, Enum);
+  using DrawBufferProc = void (HG_GL33_APIENTRY*)(Enum);
+  using ReadBufferProc = void (HG_GL33_APIENTRY*)(Enum);
+  using PolygonOffsetProc = void (HG_GL33_APIENTRY*)(Float, Float);
 
   /// <summary>Loads every function required by the first Core renderer stage.</summary>
   bool load();
@@ -200,6 +209,9 @@ public:
   FramebufferTexture2DProc FramebufferTexture2D = nullptr;
   CheckFramebufferStatusProc CheckFramebufferStatus = nullptr;
   BlitFramebufferProc BlitFramebuffer = nullptr;
+  DrawBufferProc DrawBuffer = nullptr;
+  ReadBufferProc ReadBuffer = nullptr;
+  PolygonOffsetProc PolygonOffset = nullptr;
 
 private:
   std::string loadError_;

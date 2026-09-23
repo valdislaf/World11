@@ -13,7 +13,8 @@
 | --- | --- | --- |
 | Регистрация | `cpp/world/WorldCatalog.cpp` | Мир 11 без гравитации |
 | Камера, порталы, время | `cpp/world/CppWorldGl33.cpp` | `kWorld11Portals`, `initColliders`, `beforeBeginFrame`, `groundContactAt` |
-| Последовательность рендера | `cpp/render/gl33/Gl33WorldRenderer.cpp` | `render`: skybox, дно, декор, рыба, портал, глубина воды, пузыри за водой, композиция воды, пузыри перед водой |
+| Последовательность рендера | `cpp/render/gl33/Gl33WorldRenderer.cpp` | `render`: карта теней, skybox, дно, декор, рыба, портал, глубина воды, пузыри за водой, композиция воды, пузыри перед водой |
+| Тени | `cpp/render/gl33/Gl33ShadowMap.*` | Направленный свет `kWorld11LightDirection`, карта 2048² вокруг камеры (80 м, привязка к текселям), PCF 3×3. Отбрасывают: ориентиры, кораллы, водоросли, рыба (с вырезом плавников). Принимают: дно, ориентиры, декор, рыба. Пузыри и портал теней не дают; дно только принимает. Затеняется лишь прямая составляющая (`uShadowStrength` 0.78) |
 | Океан и framebuffer | `cpp/render/gl33/Gl33Renderer.cpp` | Сетка LOD вокруг камеры, глубина сцены, преломление/поглощение |
 | Дно | `cpp/world/World11Seabed.hpp` | CPU-функция и GLSL; используется также генератором и рыбой |
 | Волны | `cpp/world/World11WaterSurface.hpp`, `cpp/render/gl33/World11WaterWaves.hpp` | CPU/GLSL варианты должны оставаться согласованными |

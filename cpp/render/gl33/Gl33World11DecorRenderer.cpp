@@ -7,6 +7,7 @@
 #include "render/gl33/Gl33Buffer.hpp"
 #include "render/gl33/Gl33Mesh.hpp"
 #include "render/gl33/Gl33ShaderProgram.hpp"
+#include "render/gl33/Gl33ShadowMap.hpp"
 #include "render/gl33/Gl33Texture.hpp"
 #include "render/gl33/Gl33VertexArray.hpp"
 #include "render/gl33/World11CoralGeometry.hpp"
@@ -487,7 +488,9 @@ out vec4 fragmentColor;
 void main() {
   vec3 normal = gl_FrontFacing ? normalize(vNormal) : -normalize(vNormal);
   float diffuse = max(dot(normal, normalize(-uLightDirection)), 0.0);
-  vec3 litColor = vColor.rgb * (0.25 + diffuse * 0.75);
+  float shadow = world11ShadowVisibility(
+      vWorldPosition, normal, uLightDirection);
+  vec3 litColor = vColor.rgb * (0.25 + diffuse * 0.75 * shadow);
   float distanceToCamera = length(vWorldPosition - uCameraPosition);
   float cameraDepth = max(0.0, uWaterSurfaceY - uCameraPosition.y);
   float fragmentDepth = max(0.0, uWaterSurfaceY - vWorldPosition.y);
@@ -591,7 +594,9 @@ void main() {
   coralColor = mix(vec3(luminance), coralColor,
                    vAppearance.y * (1.0 + tipHighlight * 0.35));
   coralColor *= vAppearance.z;
-  vec3 litColor = coralColor * (0.46 + diffuse * 0.54);
+  float shadow = world11ShadowVisibility(
+      vWorldPosition, normal, uLightDirection);
+  vec3 litColor = coralColor * (0.46 + diffuse * 0.54 * shadow);
 
   float distanceToCamera = length(vWorldPosition - uCameraPosition);
   float cameraDepth = max(0.0, uWaterSurfaceY - uCameraPosition.y);
@@ -693,6 +698,11 @@ void main() {
   float fogAmount = 1.0 - exp(-density * distanceToCamera);
   fragmentColor = vec4(mix(bubbleColor, uFogColor, fogAmount),
                        alpha * (1.0 - fogAmount * 0.72));
+}
+)glsl";
+
+constexpr char kShadowDepthFragmentShader[] = R"glsl(#version 330 core
+void main() {
 }
 )glsl";
 
@@ -837,6 +847,8 @@ struct Gl33World11DecorRenderer::Resources {
   Gl33ShaderProgram seaweedProgram;
   Gl33ShaderProgram coralProgram;
   Gl33ShaderProgram bubbleProgram;
+  Gl33ShaderProgram seaweedShadowProgram;
+  Gl33ShaderProgram coralShadowProgram;
   Gl33Texture coralAlbedoTexture;
 };
 
@@ -874,7 +886,8 @@ void Gl33World11DecorRenderer::setSeeds(world::World11DecorSeeds seeds) {
   cache_->centerChunkZ = std::numeric_limits<int>::max();
 }
 
-void Gl33World11DecorRenderer::render(const Gl33Camera& camera, float time) {
+void Gl33World11DecorRenderer::render(const Gl33Camera& camera, float time,
+                                      const Gl33ShadowMap* shadowMap) {
   ensureInitialized();
   updateVisibleChunks(camera);
   updateCoralInstances(camera);
@@ -895,7 +908,16 @@ void Gl33World11DecorRenderer::render(const Gl33Camera& camera, float time) {
   gl.Disable(kBlend);
   gl.Disable(kCullFace);
 
+  const auto applyShadows = [shadowMap](const Gl33ShaderProgram& program) {
+    if (shadowMap != nullptr) {
+      shadowMap->applyToReceiver(program);
+    } else {
+      program.setInt("uShadowEnabled", 0);
+    }
+  };
+
   setFrameUniforms(resources_->coralProgram, view, projection, cameraPosition);
+  applyShadows(resources_->coralProgram);
   resources_->coralProgram.setInt("uCoralAlbedo", 1);
   resources_->coralProgram.setFloat("uCoralTextureScale", 1.25f);
   resources_->coralAlbedoTexture.bind(1);
@@ -910,9 +932,39 @@ void Gl33World11DecorRenderer::render(const Gl33Camera& camera, float time) {
   gl.ActiveTexture(kTexture0);
 
   setFrameUniforms(resources_->seaweedProgram, view, projection, cameraPosition);
+  applyShadows(resources_->seaweedProgram);
   resources_->seaweedProgram.setFloat("uTime", time);
   resources_->seaweedMesh.draw();
   gl.UseProgram(0);
+}
+
+void Gl33World11DecorRenderer::renderShadowDepth(
+    const Gl33Camera& camera, float time, const Gl33ShadowMap& shadowMap) {
+  ensureInitialized();
+  updateVisibleChunks(camera);
+  updateCoralInstances(camera);
+
+  // LOD cross-fades draw both levels here without dithering; the overlap is
+  // invisible in the filtered shadow.
+  resources_->coralShadowProgram.use();
+  resources_->coralShadowProgram.setMatrix4("uView", shadowMap.lightView());
+  resources_->coralShadowProgram.setMatrix4(
+      "uProjection", shadowMap.lightProjection());
+  for (auto& typeMeshes : resources_->coralMeshes) {
+    for (auto& variantMeshes : typeMeshes) {
+      for (InstancedMesh& mesh : variantMeshes) {
+        mesh.draw();
+      }
+    }
+  }
+
+  resources_->seaweedShadowProgram.use();
+  resources_->seaweedShadowProgram.setMatrix4("uView", shadowMap.lightView());
+  resources_->seaweedShadowProgram.setMatrix4(
+      "uProjection", shadowMap.lightProjection());
+  resources_->seaweedShadowProgram.setFloat("uTime", time);
+  resources_->seaweedMesh.draw();
+  api().UseProgram(0);
 }
 
 void Gl33World11DecorRenderer::renderBubbles(
@@ -958,8 +1010,20 @@ void Gl33World11DecorRenderer::ensureInitialized() {
     return;
   }
   resources_ = std::make_unique<Resources>();
-  resources_->seaweedProgram.build(kSeaweedVertexShader, kDecorFragmentShader);
-  resources_->coralProgram.build(kCoralVertexShader, kCoralFragmentShader);
+  const std::string decorFragmentShader =
+      withWorld11Shadows(kDecorFragmentShader);
+  const std::string coralFragmentShader =
+      withWorld11Shadows(kCoralFragmentShader);
+  resources_->seaweedProgram.build(kSeaweedVertexShader,
+                                   decorFragmentShader.c_str());
+  resources_->coralProgram.build(kCoralVertexShader,
+                                 coralFragmentShader.c_str());
+  initializeWorld11ShadowReceiver(resources_->seaweedProgram);
+  initializeWorld11ShadowReceiver(resources_->coralProgram);
+  resources_->seaweedShadowProgram.build(kSeaweedVertexShader,
+                                         kShadowDepthFragmentShader);
+  resources_->coralShadowProgram.build(kCoralVertexShader,
+                                       kShadowDepthFragmentShader);
   resources_->coralAlbedoTexture.loadFget(
       "datasets/0x00000018.fget", Gl33TextureWrap::Repeat);
   const std::string bubbleShader = bubbleVertexShaderSource();

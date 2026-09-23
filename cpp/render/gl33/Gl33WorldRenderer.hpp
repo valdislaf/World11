@@ -46,6 +46,7 @@ private:
   std::unique_ptr<Gl33Renderer> oceanRenderer_;
   std::unique_ptr<Gl33World11DecorRenderer> world11DecorRenderer_;
   std::unique_ptr<Gl33World11FishRenderer> world11FishRenderer_;
+  std::unique_ptr<Gl33ShadowMap> world11ShadowMap_;
   std::unique_ptr<Gl33Skybox> skybox_;
 };
 

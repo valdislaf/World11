@@ -3,6 +3,7 @@
 #include "render/gl33/Gl33Api.hpp"
 #include "render/gl33/Gl33Mesh.hpp"
 #include "render/gl33/Gl33ShaderProgram.hpp"
+#include "render/gl33/Gl33ShadowMap.hpp"
 #include "render/gl33/World11WaterWaves.hpp"
 #include "world/World11Seabed.hpp"
 
@@ -318,8 +319,11 @@ uniform float uDepthAbsorption;
 out vec4 fragmentColor;
 
 void main() {
-  float diffuse = max(dot(normalize(vNormal), normalize(-uLightDirection)), 0.0);
-  float light = 0.28 + diffuse * 0.72;
+  vec3 normal = normalize(vNormal);
+  float diffuse = max(dot(normal, normalize(-uLightDirection)), 0.0);
+  float shadow = world11ShadowVisibility(
+      vWorldPosition, normal, uLightDirection);
+  float light = 0.28 + diffuse * 0.72 * shadow;
   vec3 litColor = uBaseColor.rgb * light;
   float distanceToCamera = length(vWorldPosition - uCameraPosition);
   float cameraDepth = max(0.0, uWaterSurfaceY - uCameraPosition.y);
@@ -519,7 +523,8 @@ void Gl33Renderer::beginOpaquePass(const Gl33Camera& camera) {
   gl.DepthMask(kTrue);
 }
 
-void Gl33Renderer::renderSeabed(const Gl33Camera& camera) {
+void Gl33Renderer::renderSeabed(const Gl33Camera& camera,
+                                const Gl33ShadowMap* shadowMap) {
   ensureInitialized();
   const Vec3 position{camera.position[0], camera.position[1], camera.position[2]};
   const Vec3 front{camera.front[0], camera.front[1], camera.front[2]};
@@ -544,6 +549,11 @@ void Gl33Renderer::renderSeabed(const Gl33Camera& camera) {
     setSharedUniforms(resources_->terrainProgram, model, view, projection,
                       position, patchOrigin);
     resources_->terrainProgram.setVec4("uBaseColor", 0.52f, 0.40f, 0.22f, 1.0f);
+    if (shadowMap != nullptr) {
+      shadowMap->applyToReceiver(resources_->terrainProgram);
+    } else {
+      resources_->terrainProgram.setInt("uShadowEnabled", 0);
+    }
     resources_->terrainMeshes[levelIndex].draw();
   }
   gl.UseProgram(0);
@@ -745,7 +755,11 @@ void Gl33Renderer::ensureInitialized() {
   }
   resources_ = std::make_unique<Resources>();
   const std::string terrainShader = terrainVertexShaderSource();
-  resources_->terrainProgram.build(terrainShader.c_str(), kTerrainFragmentShader);
+  const std::string terrainFragmentShader =
+      withWorld11Shadows(kTerrainFragmentShader);
+  resources_->terrainProgram.build(terrainShader.c_str(),
+                                   terrainFragmentShader.c_str());
+  initializeWorld11ShadowReceiver(resources_->terrainProgram);
   const std::string waterShader = waterVertexShaderSource();
   resources_->waterProgram.build(
       waterShader.c_str(), kWaterCompositeFragmentShader);
