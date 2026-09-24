@@ -16,6 +16,8 @@ struct World11FishMovementVolume {
   float surfaceClearance = 0.5f;
   float seabedClearance = 0.4f;
   float fishHalfHeight = 0.65f;
+  /// <summary>Highest allowed center height above the seabed; reef fish stay low.</summary>
+  float maximumSeabedHeight = 1.0e6f;
 };
 
 struct World11FishState {

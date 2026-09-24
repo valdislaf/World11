@@ -6,6 +6,8 @@
 #include "render/gl33/Gl33ShaderProgram.hpp"
 #include "render/gl33/Gl33ShadowMap.hpp"
 #include "render/gl33/Gl33Texture.hpp"
+#include "render/gl33/World11ReefFishGeometry.hpp"
+#include "world/World11ReefFishSchool.hpp"
 
 #include <algorithm>
 #include <array>
@@ -351,6 +353,8 @@ uniform float uTailPhase;
 uniform float uFishScale;
 uniform float uTailAmplitude;
 uniform float uFishHalfWidth;
+// Texture u of the three tail hinges, head to tail; set per species.
+uniform vec3 uTailJointsU;
 
 out vec2 vUv;
 out vec3 vWorldPosition;
@@ -376,9 +380,9 @@ vec3 rotatePointAroundY(vec3 point, float hingeX, float angle) {
 
 void main() {
   vec3 local = aPosition;
-  const float firstJointU = 0.68;
-  const float secondJointU = 0.80;
-  const float thirdJointU = 0.90;
+  float firstJointU = uTailJointsU.x;
+  float secondJointU = uTailJointsU.y;
+  float thirdJointU = uTailJointsU.z;
   float firstHingeX = uFishHalfWidth * (1.0 - 2.0 * firstJointU);
   float secondHingeX = uFishHalfWidth * (1.0 - 2.0 * secondJointU);
   float thirdHingeX = uFishHalfWidth * (1.0 - 2.0 * thirdJointU);
@@ -491,14 +495,68 @@ void main() {
 }
 )glsl";
 
+struct FishPose {
+  Vec3 position;
+  Vec3 forward;
+  Vec3 up;
+  Vec3 side;
+  float tailPhase;
+  float tailAmplitude;
+};
+
+FishPose poseFromState(const world::World11FishState& fish) {
+  const Vec3 velocity{fish.velocity.x, fish.velocity.y, fish.velocity.z};
+  const float speed = length(velocity);
+  const Vec3 forward = normalize(velocity, {1.0f, 0.0f, 0.0f});
+  const Vec3 approximateUp = normalize(subtract(
+      {0.0f, 1.0f, 0.0f}, multiply(forward, forward.y)), {0.0f, 1.0f, 0.0f});
+  const Vec3 side = normalize(cross(forward, approximateUp), {0.0f, 0.0f, 1.0f});
+  const Vec3 up = normalize(cross(side, forward), {0.0f, 1.0f, 0.0f});
+  return {{fish.position.x, fish.position.y, fish.position.z},
+          forward, up, side, fish.tailPhase,
+          0.84f + 0.16f * std::clamp(
+              speed / world::World11FishTrajectory::kMaximumSpeed, 0.0f, 1.0f)};
+}
+
+void setPose(const Gl33ShaderProgram& program, const FishPose& pose) {
+  program.setVec3("uFishPosition", pose.position.x, pose.position.y,
+                  pose.position.z);
+  program.setVec3("uForward", pose.forward.x, pose.forward.y, pose.forward.z);
+  program.setVec3("uUp", pose.up.x, pose.up.y, pose.up.z);
+  program.setVec3("uSide", pose.side.x, pose.side.y, pose.side.z);
+  program.setFloat("uTailPhase", pose.tailPhase);
+  program.setFloat("uTailAmplitude", pose.tailAmplitude);
+}
+
+void uploadReefFish(Gl33Mesh& mesh, float halfWidth, float halfHeight) {
+  static_assert(sizeof(ReefFishVertex) == sizeof(Gl33Vertex),
+                "Reef fish vertices must match the shared Core layout");
+  const ReefFishMeshData data = buildReefFishMesh(halfWidth, halfHeight);
+  std::vector<Gl33Vertex> vertices;
+  vertices.reserve(data.vertices.size());
+  for (const ReefFishVertex& source : data.vertices) {
+    vertices.push_back(Gl33Vertex{
+        {source.position[0], source.position[1], source.position[2]},
+        {source.normal[0], source.normal[1], source.normal[2]},
+        {source.uv[0], source.uv[1]},
+        source.surfaceType});
+  }
+  mesh.upload(vertices, data.indices);
+}
+
 }  // namespace
 
 struct Gl33World11FishRenderer::Resources {
-  Gl33Mesh fishMesh;
   Gl33ShaderProgram fishProgram;
   Gl33ShaderProgram fishShadowProgram;
+  // Silver jack: body extruded from the texture silhouette.
+  Gl33Mesh fishMesh;
   Gl33Texture fishTexture;
   float fishHalfWidth = 0.0f;
+  // Reef butterflyfish: procedural lofted body and fins.
+  Gl33Mesh reefMesh;
+  Gl33Texture reefTexture;
+  float reefHalfWidth = 0.0f;
 };
 
 Gl33World11FishRenderer::Gl33World11FishRenderer(
@@ -512,6 +570,10 @@ Gl33World11FishRenderer::Gl33World11FishRenderer(
     trajectories_.emplace_back(trajectorySeed ^
         (0x9E3779B97F4A7C15ULL * static_cast<std::uint64_t>(i)),
         volume.center, volume);
+  }
+  reefTrajectories_.reserve(world::kWorld11ReefFishCount);
+  for (std::size_t i = 0; i < world::kWorld11ReefFishCount; ++i) {
+    reefTrajectories_.push_back(world::world11ReefFishTrajectory(i));
   }
 }
 
@@ -540,7 +602,6 @@ void Gl33World11FishRenderer::render(
   resources_->fishProgram.use();
   resources_->fishProgram.setMatrix4("uView", view.data());
   resources_->fishProgram.setMatrix4("uProjection", projection.data());
-  resources_->fishProgram.setFloat("uFishHalfWidth", resources_->fishHalfWidth);
   resources_->fishProgram.setVec3(
       "uCameraPosition", cameraPosition.x, cameraPosition.y, cameraPosition.z);
   setWorld11Environment(resources_->fishProgram);
@@ -551,7 +612,6 @@ void Gl33World11FishRenderer::render(
   }
   resources_->fishProgram.setFloat("uAlphaCutoff", 0.30f);
   resources_->fishProgram.setInt("uFishTexture", 0);
-  resources_->fishTexture.bind(0);
   drawPopulation(resources_->fishProgram, simulationTime);
   gl.BindTexture(kTexture2D, 0);
   gl.UseProgram(0);
@@ -564,10 +624,8 @@ void Gl33World11FishRenderer::renderShadowDepth(
   program.use();
   program.setMatrix4("uView", shadowMap.lightView());
   program.setMatrix4("uProjection", shadowMap.lightProjection());
-  program.setFloat("uFishHalfWidth", resources_->fishHalfWidth);
   program.setFloat("uAlphaCutoff", 0.30f);
   program.setInt("uFishTexture", 0);
-  resources_->fishTexture.bind(0);
   drawPopulation(program, simulationTime);
   Gl33Api& gl = api();
   gl.BindTexture(kTexture2D, 0);
@@ -576,30 +634,31 @@ void Gl33World11FishRenderer::renderShadowDepth(
 
 void Gl33World11FishRenderer::drawPopulation(
     const Gl33ShaderProgram& program, float simulationTime) {
+  const double time = std::max(0.0f, simulationTime);
+
+  program.setFloat("uFishHalfWidth", resources_->fishHalfWidth);
+  program.setVec3("uTailJointsU", 0.68f, 0.80f, 0.90f);
+  resources_->fishTexture.bind(0);
   for (std::size_t index = 0; index < trajectories_.size(); ++index) {
-    const world::World11FishState fish = trajectories_[index].sample(
-        std::max(0.0f, simulationTime));
-    const Vec3 velocity{fish.velocity.x, fish.velocity.y, fish.velocity.z};
-    const float speed = length(velocity);
-    const Vec3 forward = normalize(velocity, {1.0f, 0.0f, 0.0f});
-    const Vec3 approximateUp = normalize(subtract(
-        {0.0f, 1.0f, 0.0f}, multiply(forward, forward.y)), {0.0f, 1.0f, 0.0f});
-    const Vec3 side = normalize(cross(forward, approximateUp), {0.0f, 0.0f, 1.0f});
-    const Vec3 up = normalize(cross(side, forward), {0.0f, 1.0f, 0.0f});
     program.setFloat("uFishScale", index == 0 ? 1.0f :
         0.52f + 0.065f * static_cast<float>(index));
     program.setVec3("uFishTint", index % 2 == 0 ? 1.08f : 0.78f,
         0.94f, index % 2 == 0 ? 0.76f : 1.08f);
-    program.setVec3(
-        "uFishPosition", fish.position.x, fish.position.y, fish.position.z);
-    program.setVec3("uForward", forward.x, forward.y, forward.z);
-    program.setVec3("uUp", up.x, up.y, up.z);
-    program.setVec3("uSide", side.x, side.y, side.z);
-    program.setFloat("uTailPhase", fish.tailPhase);
-    program.setFloat(
-        "uTailAmplitude", 0.84f + 0.16f * std::clamp(
-            speed / world::World11FishTrajectory::kMaximumSpeed, 0.0f, 1.0f));
+    setPose(program, poseFromState(trajectories_[index].sample(time)));
     resources_->fishMesh.draw();
+  }
+
+  // The reef fish tail starts at the narrow peduncle (u ~ 0.79).
+  program.setFloat("uFishHalfWidth", resources_->reefHalfWidth);
+  program.setVec3("uTailJointsU", 0.66f, 0.76f, 0.86f);
+  resources_->reefTexture.bind(0);
+  for (std::size_t index = 0; index < reefTrajectories_.size(); ++index) {
+    const float variation = static_cast<float>(index % 4);
+    program.setFloat("uFishScale", 0.86f + 0.06f * variation);
+    program.setVec3("uFishTint", 1.0f + 0.02f * variation,
+                    0.97f + 0.01f * variation, 0.92f);
+    setPose(program, poseFromState(reefTrajectories_[index].sample(time)));
+    resources_->reefMesh.draw();
   }
 }
 
@@ -625,6 +684,15 @@ void Gl33World11FishRenderer::ensureInitialized() {
                  resources_->fishTexture,
                  resources_->fishHalfWidth,
                  kFishHalfHeight);
+
+  resources_->reefTexture.loadFget(
+      "datasets/0x0000001C.fget", Gl33TextureWrap::ClampToEdge);
+  const float reefAspect =
+      static_cast<float>(resources_->reefTexture.width()) /
+      static_cast<float>(resources_->reefTexture.height());
+  resources_->reefHalfWidth = world::kWorld11ReefFishHalfHeight * reefAspect;
+  uploadReefFish(resources_->reefMesh, resources_->reefHalfWidth,
+                 world::kWorld11ReefFishHalfHeight);
 }
 
 }  // namespace hg::render::gl33

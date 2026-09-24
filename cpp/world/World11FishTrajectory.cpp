@@ -261,12 +261,15 @@ void World11FishTrajectory::integrate(
         inward, kMaximumAcceleration * (0.20f + 0.80f * boundaryStrength)));
   }
 
-  const float surfaceLimit = world11WaterSurfaceHeight(
-      state.fish.position.x, state.fish.position.z,
-      static_cast<float>(state.time)) -
-      movementVolume_.surfaceClearance - movementVolume_.fishHalfHeight;
-  const float seabedLimit = world11SeabedHeight(
-      state.fish.position.x, state.fish.position.z) +
+  const float seabedHeight = world11SeabedHeight(
+      state.fish.position.x, state.fish.position.z);
+  const float surfaceLimit = std::min(
+      world11WaterSurfaceHeight(
+          state.fish.position.x, state.fish.position.z,
+          static_cast<float>(state.time)) -
+          movementVolume_.surfaceClearance - movementVolume_.fishHalfHeight,
+      seabedHeight + movementVolume_.maximumSeabedHeight);
+  const float seabedLimit = seabedHeight +
       movementVolume_.seabedClearance + movementVolume_.fishHalfHeight;
   constexpr float kVerticalSteeringBand = 1.8f;
   if (state.fish.position.y > surfaceLimit - kVerticalSteeringBand) {
@@ -342,12 +345,15 @@ void World11FishTrajectory::enforceBounds(SimulationState& state) const {
     }
   }
 
-  const float surfaceLimit = world11WaterSurfaceHeight(
-      state.fish.position.x, state.fish.position.z,
-      static_cast<float>(state.time)) -
-      movementVolume_.surfaceClearance - movementVolume_.fishHalfHeight;
-  const float seabedLimit = world11SeabedHeight(
-      state.fish.position.x, state.fish.position.z) +
+  const float seabedHeight = world11SeabedHeight(
+      state.fish.position.x, state.fish.position.z);
+  const float surfaceLimit = std::min(
+      world11WaterSurfaceHeight(
+          state.fish.position.x, state.fish.position.z,
+          static_cast<float>(state.time)) -
+          movementVolume_.surfaceClearance - movementVolume_.fishHalfHeight,
+      seabedHeight + movementVolume_.maximumSeabedHeight);
+  const float seabedLimit = seabedHeight +
       movementVolume_.seabedClearance + movementVolume_.fishHalfHeight;
   const float lower = std::min(seabedLimit, surfaceLimit);
   const float upper = std::max(seabedLimit, surfaceLimit);

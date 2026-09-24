@@ -96,6 +96,7 @@ set(HG_CPP_HEADERS
   cpp/render/gl33/Gl33World11DecorRenderer.hpp
   cpp/render/gl33/Gl33World11FishRenderer.hpp
   cpp/render/gl33/World11CoralGeometry.hpp
+  cpp/render/gl33/World11ReefFishGeometry.hpp
   cpp/render/gl33/World11WaterWaves.hpp
   cpp/render/gl33/World11Environment.hpp
   cpp/render/gl33/Gl33ShaderProgram.hpp
@@ -109,6 +110,7 @@ set(HG_CPP_HEADERS
   cpp/world/World11Landmarks.hpp
   cpp/world/World11DecorGenerator.hpp
   cpp/world/World11FishTrajectory.hpp
+  cpp/world/World11ReefFishSchool.hpp
    cpp/world/PortalController.hpp
    cpp/world/CppWorldGl33.hpp
   cpp/world/VerticalMotionController.hpp
@@ -159,6 +161,7 @@ set(HG_CPP_SOURCES
   cpp/render/gl33/Gl33World11DecorRenderer.cpp
   cpp/render/gl33/Gl33World11FishRenderer.cpp
   cpp/render/gl33/World11CoralGeometry.cpp
+  cpp/render/gl33/World11ReefFishGeometry.cpp
   cpp/render/gl33/Gl33ShaderProgram.cpp
   cpp/render/gl33/Gl33VertexArray.cpp
   cpp/world/WorldBuilder.cpp
@@ -276,6 +279,24 @@ if (BUILD_TESTING)
   set_property(TARGET world11_fish_trajectory_tests PROPERTY CXX_STANDARD_REQUIRED ON)
   set_property(TARGET world11_fish_trajectory_tests PROPERTY CXX_EXTENSIONS OFF)
   add_test(NAME world11_fish_trajectory COMMAND world11_fish_trajectory_tests)
+
+  add_executable(world11_reef_fish_geometry_tests
+    tests/World11ReefFishGeometryTests.cpp
+    cpp/render/gl33/World11ReefFishGeometry.cpp
+    cpp/render/gl33/World11ReefFishGeometry.hpp
+    cpp/world/World11FishTrajectory.cpp
+    cpp/world/World11FishTrajectory.hpp
+    cpp/world/World11ReefFishSchool.hpp
+    cpp/world/World11Seabed.hpp
+  )
+  target_include_directories(world11_reef_fish_geometry_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpp)
+  set_property(TARGET world11_reef_fish_geometry_tests PROPERTY CXX_STANDARD 17)
+  set_property(TARGET world11_reef_fish_geometry_tests PROPERTY CXX_STANDARD_REQUIRED ON)
+  set_property(TARGET world11_reef_fish_geometry_tests PROPERTY CXX_EXTENSIONS OFF)
+  # Reads datasets/0x0000001C.fget to check the texture against the mesh profile.
+  add_test(NAME world11_reef_fish_geometry COMMAND world11_reef_fish_geometry_tests
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
 
 #   Сборка на Linux:
@@ -312,7 +333,8 @@ endif()
 if (MINGW)
   get_filename_component(HG_COMPILER_BIN "${CMAKE_CXX_COMPILER}" DIRECTORY)
   foreach(HG_TARGET horizongates_cpp world11_decor_generator_tests
-      world11_coral_geometry_tests world11_fish_trajectory_tests world11_scene_probe)
+      world11_coral_geometry_tests world11_fish_trajectory_tests
+      world11_reef_fish_geometry_tests world11_scene_probe)
     if (TARGET ${HG_TARGET})
       foreach(HG_DLL libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll libc++.dll libunwind.dll)
         if (EXISTS "${HG_COMPILER_BIN}/${HG_DLL}")

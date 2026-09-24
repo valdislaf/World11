@@ -3,6 +3,7 @@
 #include "render/gl33/Gl33WorldRenderer.hpp"
 #include "world/PortalController.hpp"
 #include "world/World11Landmarks.hpp"
+#include "world/World11ReefFishSchool.hpp"
 #include "world/World11WaterSurface.hpp"
 #include "world/CppWorldGl33.hpp"
 #include "hg_runtime_bridge.hpp"
@@ -123,6 +124,31 @@ int main(int argc, char** argv) {
         renderer.render(frame);
         saveBitmap(output + "/" + view.name + ".bmp", 1280, 800);
         if (glGetError() != GL_NO_ERROR) throw std::runtime_error("OpenGL error capturing view");
+      }
+      // Close-up of the first reef fish from its side, using its own trajectory.
+      {
+        auto trajectory = hg::world::world11ReefFishTrajectory(0);
+        const auto fish = trajectory.sample(8.0);
+        const float speed = std::sqrt(fish.velocity.x * fish.velocity.x +
+                                      fish.velocity.z * fish.velocity.z);
+        const float sideX = speed > 1.0e-4f ? -fish.velocity.z / speed : 1.0f;
+        const float sideZ = speed > 1.0e-4f ? fish.velocity.x / speed : 0.0f;
+        const float eye[3] = {fish.position.x + sideX * 1.6f,
+                              fish.position.y + 0.35f,
+                              fish.position.z + sideZ * 1.6f};
+        float length = 0;
+        for (int axis = 0; axis < 3; ++axis) {
+          frame.camera.position[axis] = eye[axis];
+        }
+        frame.camera.front[0] = fish.position.x - eye[0];
+        frame.camera.front[1] = fish.position.y - eye[1];
+        frame.camera.front[2] = fish.position.z - eye[2];
+        for (float value : frame.camera.front) length += value * value;
+        for (float& value : frame.camera.front) value /= std::sqrt(length);
+        frame.time = 8.0f;
+        renderer.render(frame);
+        saveBitmap(output + "/reef_fish.bmp", 1280, 800);
+        if (glGetError() != GL_NO_ERROR) throw std::runtime_error("OpenGL error capturing reef fish");
       }
     }
     // Exercise the real world tick/collision/portal path with a current GL context.

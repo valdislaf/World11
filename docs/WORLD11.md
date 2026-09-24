@@ -21,8 +21,10 @@
 | Размещение декора | `cpp/world/World11DecorGenerator.*` | Seed, stableId, чанки 32 м; водоросли, кораллы, пузыри |
 | Рендер декора | `cpp/render/gl33/Gl33World11DecorRenderer.cpp` | `updateVisibleChunks`, `updateCoralInstances`, `selectCoralLods` |
 | Коралловые меши | `cpp/render/gl33/World11CoralGeometry.*` | Процедурные варианты и LOD |
-| Рыба | `cpp/render/gl33/Gl33World11FishRenderer.cpp` | Шесть траекторий, общий меш/текстура, масштаб и цвет, деформация хвоста, текстура `datasets/0x00000019.fget` |
-| Движение рыбы | `cpp/world/World11FishTrajectory.*` | Фиксированный шаг 1/120 с, seed, ограничения дна и волн |
+| Рыба | `cpp/render/gl33/Gl33World11FishRenderer.cpp` | Два вида. Каранкс: шесть траекторий, меш выдавлен по силуэту текстуры `0x00000019.fget`. Рифовая рыба-бабочка: пять рыб у колонии, текстура `0x0000001C.fget`. Суставы хвоста `uTailJointsU` задаются для каждого вида |
+| Меш рифовой рыбы | `cpp/render/gl33/World11ReefFishGeometry.*` | Процедурное тело из эллиптических сечений (замкнутое), двусторонние спинной/анальный/хвостовой плавники в средней плоскости, отставленные грудные плавники из атласа. Профиль тела совпадает с `scripts/generate_fish_02.py` |
+| Стая рифовых рыб | `cpp/world/World11ReefFishSchool.hpp` | Seed и объём движения; `maximumSeabedHeight` 3.2 м держит рыб у дна |
+| Движение рыбы | `cpp/world/World11FishTrajectory.*` | Фиксированный шаг 1/120 с, seed, ограничения дна и волн, необязательный потолок над дном |
 
 Skybox мира 11: `datasets/0x00000017.fget`. Номер ресурса не равен номеру мира:
 не предполагать, что `0x00000011.fget` описывает мир 11.

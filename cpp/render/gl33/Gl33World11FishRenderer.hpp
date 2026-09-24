@@ -12,8 +12,10 @@ namespace hg::render::gl33 {
 class Gl33ShaderProgram;
 
 /// <summary>
-/// Draws a small deterministic fish population sharing one articulated mesh
-/// and texture, with individual trajectories, scales and color tints.
+/// Draws two deterministic fish species: silver jacks sharing one mesh
+/// extruded from their texture, and a reef butterflyfish school with a
+/// procedural lofted mesh (texture 0x1C). Each fish has its own trajectory,
+/// scale and color tint.
 /// </summary>
 class Gl33World11FishRenderer final {
 public:
@@ -37,6 +39,7 @@ private:
                       float simulationTime);
 
   std::vector<world::World11FishTrajectory> trajectories_;
+  std::vector<world::World11FishTrajectory> reefTrajectories_;
   std::unique_ptr<Resources> resources_;
 };
 
