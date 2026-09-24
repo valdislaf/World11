@@ -8,6 +8,7 @@
 #include "render/gl33/Gl33Texture.hpp"
 #include "render/gl33/Gl33World11DecorRenderer.hpp"
 #include "render/gl33/Gl33World11FishRenderer.hpp"
+#include "render/gl33/World11TubeSpongeGeometry.hpp"
 #include "world/PortalController.hpp"
 #include "world/World11Seabed.hpp"
 #include "world/World11Landmarks.hpp"
@@ -454,6 +455,21 @@ void upload(Gl33Mesh& destination, MeshData mesh) {
   destination.upload(mesh.vertices, mesh.indices);
 }
 
+void upload(Gl33Mesh& destination, const TubeSpongeMeshData& mesh) {
+  static_assert(sizeof(TubeSpongeVertex) == sizeof(Gl33Vertex),
+                "Tube sponge vertices must match the shared Core layout");
+  std::vector<Gl33Vertex> vertices;
+  vertices.reserve(mesh.vertices.size());
+  for (const TubeSpongeVertex& source : mesh.vertices) {
+    vertices.push_back(Gl33Vertex{
+        {source.position[0], source.position[1], source.position[2]},
+        {source.normal[0], source.normal[1], source.normal[2]},
+        {source.uv[0], source.uv[1]},
+        source.surfaceType});
+  }
+  destination.upload(vertices, mesh.indices);
+}
+
 constexpr char kWorldVertexShaderSource[] = R"glsl(#version 330 core
 layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec3 aNormal;
@@ -783,6 +799,10 @@ struct WorldResources {
   Gl33Texture wallTexture;
   Gl33Texture panelTexture;
   bool hasCorridorTextures = false;
+  Gl33Mesh tubeSpongeOuter;
+  Gl33Mesh tubeSpongeInner;
+  Gl33Texture tubeSpongeTexture;
+  bool hasTubeSponges = false;
 };
 
 class Painter {
@@ -1280,19 +1300,16 @@ void drawWorld11Landmarks(Painter& painter, const Gl33WorldFrame& frame) {
     painter.ring(x, y + height * 1.4f, z, 0.28f,
                  {0.21f, 0.72f, 0.68f}, true, 0.55f);
   }
-  const auto colony = world::kWorld11Colony;
-  for (int i = 0; i < 18; ++i) {
-    const float angle = i * 2.39996f;
-    const float radius = 0.8f * std::sqrt(static_cast<float>(i));
-    const float x = colony.x + radius * std::cos(angle);
-    const float z = colony.z + radius * std::sin(angle);
-    const float y = world::world11SeabedHeight(x, z);
-    const float height = 1.5f + 1.1f * (0.5f + 0.5f * std::sin(i * 1.8f));
-    painter.reefRock(x, y + height * 0.5f, z, 0.22f, height * 0.6f, 0.22f,
-                     {0.15f, 0.32f, 0.43f});
-    const float glow = 0.65f + 0.12f * std::sin(frame.time * 0.6f + i * 0.4f);
-    painter.reefRock(x, y + height, z, 0.65f, 0.28f, 0.65f,
-                     {0.20f, 0.85f, 0.92f}, glow);
+  // Tube sponge colony: textured knobbly skin, darker shaded cavities.
+  WorldResources& resources = painter.resources();
+  if (resources.hasTubeSponges) {
+    // Saturated tint and a little self-illumination keep the orange readable
+    // through the blue-green absorption, as in underwater photographs.
+    painter.texturedMesh(resources.tubeSpongeOuter, identityMatrix(),
+                         resources.tubeSpongeTexture, {1.30f, 0.92f, 0.46f},
+                         1.0f, 0.12f);
+    painter.texturedMesh(resources.tubeSpongeInner, identityMatrix(),
+                         resources.tubeSpongeTexture, {0.36f, 0.24f, 0.16f});
   }
   // Sparse warm markers lead back to the portal without forming a HUD overlay.
   for (int i = 0; i < 5; ++i) {
@@ -1475,7 +1492,16 @@ void Gl33WorldRenderer::ensureInitialized() {
   upload(resources_->annulus, makeAnnulus());
   upload(resources_->portalQuad, makePortalQuad());
   upload(resources_->sphere, makeSphere());
-  if (worldId_ == 11) upload(resources_->reefRock, makeReefRock());
+  if (worldId_ == 11) {
+    upload(resources_->reefRock, makeReefRock());
+    const TubeSpongeColonyMesh sponges =
+        buildTubeSpongeColonyMesh(world11TubeSpongeColony());
+    upload(resources_->tubeSpongeOuter, sponges.outer);
+    upload(resources_->tubeSpongeInner, sponges.inner);
+    resources_->tubeSpongeTexture.loadFget(
+        "datasets/0x0000001D.fget", Gl33TextureWrap::Repeat);
+    resources_->hasTubeSponges = true;
+  }
   if (worldId_ == 7 || worldId_ == 12) {
     upload(resources_->terrain, makeTerrain(worldId_));
     resources_->hasTerrain = true;

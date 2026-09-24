@@ -150,6 +150,24 @@ int main(int argc, char** argv) {
         saveBitmap(output + "/reef_fish.bmp", 1280, 800);
         if (glGetError() != GL_NO_ERROR) throw std::runtime_error("OpenGL error capturing reef fish");
       }
+      // Close-up of the tube sponge colony landmark.
+      {
+        const auto colony = hg::world::kWorld11Colony;
+        const float floor = hg::world::world11SeabedHeight(colony.x, colony.z);
+        const float eye[3] = {colony.x - 4.5f, floor + 2.6f, colony.z + 5.0f};
+        const float target[3] = {colony.x, floor + 1.3f, colony.z};
+        float length = 0;
+        for (int axis = 0; axis < 3; ++axis) {
+          frame.camera.position[axis] = eye[axis];
+          frame.camera.front[axis] = target[axis] - eye[axis];
+          length += frame.camera.front[axis] * frame.camera.front[axis];
+        }
+        for (float& value : frame.camera.front) value /= std::sqrt(length);
+        frame.time = 8.0f;
+        renderer.render(frame);
+        saveBitmap(output + "/sponges.bmp", 1280, 800);
+        if (glGetError() != GL_NO_ERROR) throw std::runtime_error("OpenGL error capturing sponges");
+      }
     }
     // Exercise the real world tick/collision/portal path with a current GL context.
     // No runtime input window is registered, so external keyboard input cannot interfere.

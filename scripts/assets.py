@@ -11,6 +11,7 @@ ASSETS = {
     '1A': 'world11_fish_01_body_mask.png',
     '1B': 'sand_bottom_ocean.png',
     '1C': 'world11_fish_02.png',
+    '1D': 'world11_tube_sponge.png',
 }
 PNG_MAGIC = b'\x89PNG\r\n\x1a\n'
 

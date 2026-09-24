@@ -38,7 +38,8 @@ runtime datasets next to the executable. OpenGL 3.3 graphics drivers are require
 
 ## Checks
 
-Four deterministic CPU tests cover decor, coral geometry, fish trajectories and the
+Five deterministic CPU tests cover decor, coral geometry, fish trajectories, the tube
+sponge colony and the
 reef fish mesh (including its texture outline).
 The optional `world11_scene_probe` target captures six views and tests wave clearance,
 seabed collision, the arch opening and the portal round trip:
@@ -54,7 +55,7 @@ are not representative of a physical GPU.
 
 ## Assets
 
-All six required binary resources are included in `datasets/`. See
+All seven required binary resources are included in `datasets/`. See
 [datasets/README.md](datasets/README.md). `scripts/assets.py unpack` restores their
 editable PNG payloads into `assets/`; `scripts/assets.py pack` writes edited PNGs
 back to the runtime format. There are no Git LFS or private download dependencies.
