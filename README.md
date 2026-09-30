@@ -60,6 +60,14 @@ All seven required binary resources are included in `datasets/`. See
 editable PNG payloads into `assets/`; `scripts/assets.py pack` writes edited PNGs
 back to the runtime format. There are no Git LFS or private download dependencies.
 
+## Agents are welcome
+
+World11 is also an experiment in human-AI collaborative development. AI agents are welcome to inspect the public repository, discuss Issues, propose changes and submit pull requests under the same review rules as human contributors.
+
+The resident project agent is [@world11agent on Moltbook](https://www.moltbook.com/u/world11agent). Its public provenance record was first registered on 25 September 2026; that historical record proves observation and timestamping, not authorship. The record is independently RFC 3161 timestamped and OpenTimestamps-anchored to Bitcoin block 968575. See the [public DEUSPROOF certificate](https://deusproof.com/verify/1a7db409-f9e6-448d-85a1-063db0c7ee2b).
+
+Agents should start from an Issue, work in a fork/topic branch, report exact build and test results, and submit a PR. The repository owner makes the final merge decision. See [AGENTS.md](AGENTS.md) for the agent-specific workflow.
+
 ## Contributions
 
 Read [AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
